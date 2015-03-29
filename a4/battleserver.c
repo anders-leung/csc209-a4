@@ -101,7 +101,7 @@ int handleclient(struct client *p, struct client *top) {
     struct client *t;
     for (t = top; t; t = t->next) {
         if ((!t->inmatch) && (t->lastbattled != p)) {
-            match(p, t);
+            return match(p, t);
         }
     }    
 }
@@ -204,30 +204,40 @@ static void broadcast(struct client *top, int fd, char *s, int size) {
 
 int match(struct client *a, struct client *b) {
     srand(time(NULL));
+    a->inmatch = 1;
+    b->inmatch = 1;
+    a->lastbattled = b;
+    b->lastbattled = a;
     a->hp = rand() % (30 - 20) + 20;
     b->hp = rand() % (30 - 20) + 20;
     a->powermoves = rand() % (3 - 1) + 1;
     b->powermove = rand() % (3 - 1) + 1;
     int first = rand() % (2 - 1) + 1;
-    sprintf(a->fd, "You have been matched with %s\n", b->name);
-    sprintf(b->fd, "You have been matched with %s\n", a->name);
+    char buf[100];
+    sprintf(buf, "You have been matched with %s\n\0", b->name);
+    write(a->fd, buf, strlen(buf) + 1);
+    sprintf(buf, "You have been matched with %s\n\0", a->name);
+    write(b->fd, buf, strlen(buf) + 1);
     if (first == 1) {
-        sprintf(a->fd, "You have the first strike!\nYou have %d hitpoints and
-                %d powermoves\n", ahp, apowermove);
-        sprintf(b->fd, "%s has the first strike!\nYou have %d hitpoints and
-                %d powermoves\n", a->name, bhp, bpowermove);
+        sprintf(buf, "You have the first strike!\n\0");
+        write(a->fd, buf, strlen(buf) + 1);
+        sprintf(buf, "%s has the first strike!\n\0", a->name);
+        write(b->fd, buf, strlen(buf) + 1);
         while ((a->hp > 0) || (b->hp > 0)) {
-            battlemenu(a, b);
+            battle(a, b);
         }
-            
-            
-            
+        
     } else {
-        sprintf(a->fd, "%s has the first strike!\nYou have %d hitpoints and
-                %d powermoves\n", b->name, ahp, apowermove);
-        sprintf(b->fd, "You have the first strike!\nYou have %d hitpoints and
-                %d powermoves\n", bhp, bpowermove);
+        sprintf(buf, "%s has the first strike!\n\0", b->name);
+        write(a->fd, buf, strlen(buf) + 1);
+        sprintf(buf, "You have the first strike!\n\0");
+        write(b->fd, buf, strlen(buf) + 1);
+        while ((a->hp > 0) || (b->hp > 0)) {
+            battle(b, a);
+        }
     }
+    return 0;
+}
 
 
 int readmessage(dest, source, size) {
@@ -257,9 +267,13 @@ int find_network_newline(char *buf, int inbuf) {
 
 
 int battle(struct client *a, struct client *b) {
-    char buf[5];
-    sprintf(a->fd, "You can press:\n(a)ttack\n(p)owermove\n(s)peak\n");
-    sprintf(b->fd, "You can press:\n(a)ttack\n(p)owermove\n(s)peak\n");
+    char buf[100];
+    sprintf(buf, "You have %d hp and %d powermoves\nYou can press:\n(a)ttack\n\
+                 (p)owermove\n(s)peak\n\0", a->hp, a->powermoves);
+    write(a->fd, buf, strlen(buf) + 1);
+    sprintf(buf, "You have %d hp and %d powermoves\nYou can press:\n(a)ttack\n\
+                 (p)owermove\n(s)peak\n\0", b->hp, b->powermoves);
+    write(b->fd, buf, strlen(buf) + 1);
     int nbytes;
     while ((nbytes = read(buf, a->fd, 1) >= 0)) {
         if (buf[0] == 'a') {
