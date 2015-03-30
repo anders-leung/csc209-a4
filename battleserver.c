@@ -38,8 +38,7 @@ int main(void) {
     fd_set rset;
 
     int i;
-
-
+    
     int listenfd = bindandlisten();
     FD_ZERO(&allset);
     FD_SET(listenfd, &allset);
@@ -101,11 +100,11 @@ int handleclient(struct client *p, struct client *top) {
     struct client *t;
     for (t = top; t; t = t->next) {
         if ((!t->inmatch) && (t->lastbattled != p)) {
-            return match(p, t);
+            return match(p,t);
         }
-    }    
+    }
+    return 0;
 }
-
 
 int bindandlisten(void) {
     struct sockaddr_in r;
@@ -139,22 +138,24 @@ int bindandlisten(void) {
     return listenfd;
 }
 
-static struct client *addclient(struct client *top,  int fd) {
+struct client *addclient(struct client *top,  int fd) {
+    
     struct client *p = malloc(sizeof(struct client));
     if (!p) {
         perror("malloc");
         exit(1);
     }
-
-    sprintf(fd, "What is your name?");
+    
+    //write instead of sprintf?
+    write(fd, "What is your name?", 19);
     readmessage(p->name, fd, MAXNAME);
-
-
+    
     char outbuf[MAXNAME + 30];
-    sprintf(outbuf, "%s has entered the arena!", name);
+    sprintf(outbuf, "%s has entered the arena!", p->name);
     broadcast(top, fd, outbuf, MAXNAME + 30);
 
-    p->name = name;
+    
+    //p->name = name;
     p->fd = fd;
 
     struct client *t;
@@ -162,7 +163,9 @@ static struct client *addclient(struct client *top,  int fd) {
     if (t->next == NULL) {
         t->next = p;
     } else {
-        perror("Could not add %s\n", name);
+        printf("Could not add %s\n", p->name);
+        perror("name");
+    }
 
     return top;
 }
@@ -203,7 +206,7 @@ static void broadcast(struct client *top, int fd, char *s, int size) {
 
 
 int match(struct client *a, struct client *b) {
-    srand(time(NULL));
+    srand((unsigned)time(NULL));
     a->inmatch = 1;
     b->inmatch = 1;
     a->lastbattled = b;
@@ -211,41 +214,44 @@ int match(struct client *a, struct client *b) {
     a->hp = rand() % (30 - 20) + 20;
     b->hp = rand() % (30 - 20) + 20;
     a->powermoves = rand() % (3 - 1) + 1;
-    b->powermove = rand() % (3 - 1) + 1;
+    b->powermoves = rand() % (3 - 1) + 1;
+    
     int first = rand() % (2 - 1) + 1;
     char buf[100];
-    sprintf(buf, "You have been matched with %s\n\0", b->name);
+    sprintf(buf, "You have been matched with %s\n", b->name);
     write(a->fd, buf, strlen(buf) + 1);
-    sprintf(buf, "You have been matched with %s\n\0", a->name);
+    sprintf(buf, "You have been matched with %s\n", a->name);
     write(b->fd, buf, strlen(buf) + 1);
+    
     if (first == 1) {
-        sprintf(buf, "You have the first strike!\n\0");
+        sprintf(buf, "You have the first strike!\nYou have %d hitpoints and %d powermoves\n", a->hp, a->powermoves);
         write(a->fd, buf, strlen(buf) + 1);
-        sprintf(buf, "%s has the first strike!\n\0", a->name);
+        sprintf(buf, "%s has the first strike!\nYou have %d hitpoints and %d powermoves\n", a->name, b->hp, b->powermoves);
         write(b->fd, buf, strlen(buf) + 1);
         while ((a->hp > 0) || (b->hp > 0)) {
             battle(a, b);
         }
-        
     } else {
-        sprintf(buf, "%s has the first strike!\n\0", b->name);
+        
+        sprintf(buf, "%s has the first strike!\nYou have %d hitpoints and %d powermoves\n", b->name, a->hp, a->powermoves);
         write(a->fd, buf, strlen(buf) + 1);
-        sprintf(buf, "You have the first strike!\n\0");
+        sprintf(buf, "You have the first strike!\nYou have %d hitpoints and %d powermoves\n", b->hp, b->powermoves);
         write(b->fd, buf, strlen(buf) + 1);
         while ((a->hp > 0) || (b->hp > 0)) {
-            battle(b, a);
+            battle(a, b);
         }
     }
     return 0;
 }
 
-
-int readmessage(dest, source, size) {
+//should the parameters have int dest, int source, int size?
+int readmessage(int dest, int source, int size) {
     int nbytes;
     int end;
     int inbuf;
     char buf[216];
-    while ((nbytes = read(buf, source, size)) >= 0) {
+    //i switched source and buf for read, dunno if the size is right tho
+    while ((nbytes = read(source, buf, size)) >= 0) {
         inbuf += nbytes;
         if ((end = find_network_newline(buf, inbuf)) >= 0) {
             buf[end] = '\0';
@@ -253,7 +259,6 @@ int readmessage(dest, source, size) {
         }
     }
 }
-
 
 int find_network_newline(char *buf, int inbuf) {
     int i;
@@ -264,35 +269,37 @@ int find_network_newline(char *buf, int inbuf) {
     }
     return -1;
 }
-
-
+    
 int battle(struct client *a, struct client *b) {
     char buf[100];
-    sprintf(buf, "You have %d hp and %d powermoves\nYou can press:\n(a)ttack\n\
-                 (p)owermove\n(s)peak\n\0", a->hp, a->powermoves);
+    sprintf(buf, "You can press:\n(a)ttack\n(p)owermove\n(s)peak\n");
     write(a->fd, buf, strlen(buf) + 1);
-    sprintf(buf, "You have %d hp and %d powermoves\nYou can press:\n(a)ttack\n\
-                 (p)owermove\n(s)peak\n\0", b->hp, b->powermoves);
+    sprintf(buf, "You can press:\n(a)ttack\n(p)owermove\n(s)peak\n");
     write(b->fd, buf, strlen(buf) + 1);
+    
     int nbytes;
-    while ((nbytes = read(buf, a->fd, 1) >= 0)) {
+    while ((nbytes = read(a->fd, buf, 1) >= 0)) {
         if (buf[0] == 'a') {
             b->hp -= rand() % (6 - 2) + 2;
+        }
         else if (buf[0] == 'p') {
             int attack = rand() % (6 - 2) + 2;
             attack = 3 * attack;
             if ((rand() % 1) == 0) {
-                /*
-            
+                b->hp -= attack;
+            }
+        }
+        else if (buf[0] == 's'){
+            sprintf(buf, "Speak: ");
+            char outbuf[100];
+            write(a->fd, buf, strlen(buf) + 1);
+            readmessage(outbuf, a->fd, strlen(outbuf) + 1);
+            write(b->fd, outbuf, strlen(outbuf) + 1);
+        }
+        
+    }
+    return 0;
 }
 
 
-
-
-
-
-
-
-
-
-
+    
