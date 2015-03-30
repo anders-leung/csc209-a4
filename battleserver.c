@@ -26,6 +26,15 @@ struct client {
     int powermoves;
 };
 
+static struct client *addclient(struct client *top,  int fd);
+static struct client *removeclient(struct client *top, int fd);
+static void broadcast(struct client *top, int fd, char *s, int size);
+int handleclient(struct client *p, struct client *top);
+int match(struct client *a, struct client *b);
+int readmessage(int dest, int source, int size);
+int find_network_newline(char *buf, int inbuf);
+int battle(struct client *a, struct client *b);
+int bindandlisten(void);
 
 int main(void) {
     int clientfd, maxfd, nready;
@@ -72,7 +81,7 @@ int main(void) {
                 maxfd = clientfd;
             }
             printf("connection from %s\n", inet_ntoa(q.sin_addr));
-            head = addclient(head, clientfd, q.sin_addr);
+            head = addclient(head, clientfd);
         }
 
         for (i = 0; i <= maxfd; i++) {
@@ -138,7 +147,7 @@ int bindandlisten(void) {
     return listenfd;
 }
 
-struct client *addclient(struct client *top,  int fd) {
+static struct client *addclient(struct client *top,  int fd) {
     
     struct client *p = malloc(sizeof(struct client));
     if (!p) {
@@ -258,6 +267,7 @@ int readmessage(int dest, int source, int size) {
             write(dest, buf, strlen(buf) + 1);
         }
     }
+    return 0;
 }
 
 int find_network_newline(char *buf, int inbuf) {
