@@ -7,6 +7,7 @@
 #include <sys/time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include "battleserver.h"
 
 #ifndef PORT
     #define PORT 56092
@@ -100,7 +101,7 @@ int handleclient(struct client *p, struct client *top) {
 	printf("handleclient\n");
     struct client *t;
     for (t = top; t; t = t->next) {
-        if ((!t->inmatch) && (t->lastbattled != p)) {
+        if ((!t->inmatch) && (t->lastbattled != p) && (p != t)) {
             return match(p,t);
         }
     }
@@ -148,6 +149,11 @@ static struct client *addclient(struct client *top, int fd, struct in_addr addr)
     
     write(fd, "What is your name?", 19);
     readmessage(p->name, fd, MAXNAME);
+    
+    char message[512];
+    sprintf(message, "Welcome, %s! Awaiting opponent...\n", p->name);
+    write(fd, message, strlen(message));
+    
     char outbuf[MAXNAME + 30];
     sprintf(outbuf, "%s has entered the arena!", p->name);
     broadcast(top, fd, outbuf, MAXNAME + 30);
