@@ -235,21 +235,18 @@ int match(struct client *a, struct client *b) {
     write(b->fd, buf, strlen(buf) + 1);
     
     if (first == 1) {
-        sprintf(buf, "You have the first strike!\nYou have %d hitpoints and %d powermoves\n", a->hp, a->powermoves);
-        write(a->fd, buf, strlen(buf) + 1);
-        sprintf(buf, "%s has the first strike!\nYou have %d hitpoints and %d powermoves\n", a->name, b->hp, b->powermoves);
-        write(b->fd, buf, strlen(buf) + 1);
+        
         while ((a->hp > 0) || (b->hp > 0)) {
-            battle(a, b);
+	  if (battle(a, b) == 1){
+	    battle(b,a);
+	  }
         }
     } else {
         
-        sprintf(buf, "%s has the first strike!\nYou have %d hitpoints and %d powermoves\n", b->name, a->hp, a->powermoves);
-        write(a->fd, buf, strlen(buf) + 1);
-        sprintf(buf, "You have the first strike!\nYou have %d hitpoints and %d powermoves\n", b->hp, b->powermoves);
-        write(b->fd, buf, strlen(buf) + 1);
         while ((a->hp > 0) || (b->hp > 0)) {
-            battle(a, b);
+	  if (battle(a, b) == 1){
+	    battle(b,a); 
+	  }
         }
     }
     return 0;
@@ -284,23 +281,36 @@ int find_network_newline(char *buf, int inbuf) {
 }
     
 int battle(struct client *a, struct client *b) {
+  
+  
     char buf[100];
+    
+    sprintf(buf, "It's your turn!\nYou have %d hitpoints and %d powermoves\n", a->hp, a->powermoves);
+    write(a->fd, buf, strlen(buf) + 1);
+    sprintf(buf, "It's %s turn!\nYou have %d hitpoints and %d powermoves\n", a->name, b->hp, b->powermoves);
+    write(b->fd, buf, strlen(buf) + 1);
+	
     sprintf(buf, "You can press:\n(a)ttack\n(p)owermove\n(s)peak\n");
     write(a->fd, buf, strlen(buf) + 1);
     sprintf(buf, "You can press:\n(a)ttack\n(p)owermove\n(s)peak\n");
     write(b->fd, buf, strlen(buf) + 1);
     
     int nbytes;
-    while ((nbytes = read(a->fd, buf, 1) >= 0)) {
+    while ((nbytes = read(a->fd, buf, 1) > 0)) {
         if (buf[0] == 'a') {
             b->hp -= rand() % (6 - 2) + 2;
+	    return 1;
         }
         else if (buf[0] == 'p') {
+	  if(a->powermoves > 0){
             int attack = rand() % (6 - 2) + 2;
             attack = 3 * attack;
             if ((rand() % 1) == 0) {
                 b->hp -= attack;
+		a->powermoves -= 1;
+		return 1;
             }
+	  }
         }
         else if (buf[0] == 's'){
             sprintf(buf, "Speak: ");
@@ -308,10 +318,11 @@ int battle(struct client *a, struct client *b) {
             write(a->fd, buf, strlen(buf) + 1);
             readmessage(outbuf, a->fd, strlen(outbuf) + 1);
             write(b->fd, outbuf, strlen(outbuf) + 1);
+	    return 0;
         }
         
     }
-    return 0;
+    return -1;
 }
 
 
