@@ -7,7 +7,7 @@
 int bindandlisten(void);
 
 /* Add a client into the server */
-static struct client *addclient(struct client *top, int fd);
+static struct client *addclient(struct client *top, int fd, struct in_addr addr);
 
 /* Remove a client from the server */
 static struct client *removeclient(struct client *top, int fd);
