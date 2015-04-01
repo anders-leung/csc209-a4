@@ -18,4 +18,12 @@ static void broadcast(struct client *top, int fd, char *s, int size);
 /* Match client with another client that meets the requirements */
 int handleclient(struct client *p, struct client *top);
 
+int match(struct client *a, struct client *b);
+
+int readmessage(char * dest, int source, int size);
+
+int find_network_newline(char *buf, int inbuf);
+
+int battle(struct client *a, struct client *b);
+
 #endif
