@@ -14,6 +14,7 @@
 
 #define MAXNAME 25
 
+#include "battleserver.h"
 
 struct client {
     char name[MAXNAME];
@@ -25,16 +26,6 @@ struct client {
     int hp;
     int powermoves;
 };
-
-static struct client *addclient(struct client *top,  int fd);
-static struct client *removeclient(struct client *top, int fd);
-static void broadcast(struct client *top, int fd, char *s, int size);
-int handleclient(struct client *p, struct client *top);
-int match(struct client *a, struct client *b);
-int readmessage(int dest, int source, int size);
-int find_network_newline(char *buf, int inbuf);
-int battle(struct client *a, struct client *b);
-int bindandlisten(void);
 
 int main(void) {
     int clientfd, maxfd, nready;
@@ -81,7 +72,7 @@ int main(void) {
                 maxfd = clientfd;
             }
             printf("connection from %s\n", inet_ntoa(q.sin_addr));
-            head = addclient(head, clientfd);
+            head = addclient(head, clientfd, q.sin_addr);
         }
 
         for (i = 0; i <= maxfd; i++) {
@@ -106,6 +97,7 @@ int main(void) {
 
 
 int handleclient(struct client *p, struct client *top) {
+	printf("handleclient\n");
     struct client *t;
     for (t = top; t; t = t->next) {
         if ((!t->inmatch) && (t->lastbattled != p)) {
@@ -147,33 +139,37 @@ int bindandlisten(void) {
     return listenfd;
 }
 
-static struct client *addclient(struct client *top,  int fd) {
-    
+static struct client *addclient(struct client *top, int fd, struct in_addr addr) {
     struct client *p = malloc(sizeof(struct client));
     if (!p) {
         perror("malloc");
         exit(1);
     }
     
-    //write instead of sprintf?
     write(fd, "What is your name?", 19);
     readmessage(p->name, fd, MAXNAME);
-    
     char outbuf[MAXNAME + 30];
     sprintf(outbuf, "%s has entered the arena!", p->name);
     broadcast(top, fd, outbuf, MAXNAME + 30);
-
     
-    //p->name = name;
     p->fd = fd;
-
+    p->ipaddr = addr;
+    p->next = NULL;
     struct client *t;
-    for (t = top; t; t = t->next);
-    if (t->next == NULL) {
-        t->next = p;
+    if (top == NULL) {
+        top = p;
     } else {
-        printf("Could not add %s\n", p->name);
-        perror("name");
+        for (t = top; t; t = t->next) {
+            if (t->next == NULL) {
+                break;
+            }
+        }
+        if (t->next == NULL) {
+            t->next = p;
+        } else {
+            printf("Could not add %s\n", p->name);
+            perror("name");
+        }
     }
 
     return top;
@@ -253,27 +249,28 @@ int match(struct client *a, struct client *b) {
     return 0;
 }
 
-//should the parameters have int dest, int source, int size?
-int readmessage(int dest, int source, int size) {
+int readmessage(char *dest, int source, int size) {
     int nbytes;
     int end;
-    int inbuf;
+    int inbuf = 0;
     char buf[216];
-    //i switched source and buf for read, dunno if the size is right tho
-    while ((nbytes = read(source, buf, size)) >= 0) {
+    char *after = buf;
+    while ((nbytes = read(source, after, size - 1)) > 0) {
         inbuf += nbytes;
         if ((end = find_network_newline(buf, inbuf)) >= 0) {
             buf[end] = '\0';
-            write(dest, buf, strlen(buf) + 1);
+            strcpy(dest, buf);
+            return 0;
         }
+        after = &(*(buf + inbuf));
     }
-    return 0;
+    return -1;
 }
 
 int find_network_newline(char *buf, int inbuf) {
     int i;
     for (i = 0; i < inbuf; i++) {
-        if (buf[i] == '\r') {
+        if (buf[i] == '\n') {
             return i;
         }
     }
