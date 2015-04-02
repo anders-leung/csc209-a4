@@ -26,8 +26,8 @@ int find_newline(char *buf, int inbuf);
 
 void match(struct client *p, struct client *top);
 
-void attack(struct client *a, struct client *b);
+void attack(struct client *a, struct client *b, struct client *top);
 
-void powermove(struct client *a, struct client *b);
+void powermove(struct client *a, struct client *b, struct client *top);
 
 #endif

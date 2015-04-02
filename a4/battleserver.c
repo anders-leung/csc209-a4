@@ -122,11 +122,11 @@ printf("handleclient: struct client *p->name = %s\n", p->name);
 printf("client %s has opponent %s\n", p->name, p->opponent->name);
             if (p->turn) {
                 if (buf[0] == 'a') {
-                    attack(p, p->opponent);
+                    attack(p, p->opponent, top);
                     return 0;
 
                 } else if (buf[0] == 'p') {
-                    powermove(p, p->opponent);
+                    powermove(p, p->opponent, top);
                     return 0;
                 }
             }
@@ -134,7 +134,7 @@ printf("client %s has opponent %s\n", p->name, p->opponent->name);
 
     } else if (len == 0) {
         printf("Disconnect from %s\n", inet_ntoa(p->ipaddr));
-        sprintf(outbuf, "%s left the arena\n", p->name);
+        sprintf(outbuf, "%s has left the arena\n", p->name);
         broadcast(top, p->fd, outbuf, strlen(outbuf));
         return -1;
 
@@ -178,9 +178,11 @@ printf("trying to match people here\n");
     struct client *t;
     for (t = top; t; t = t->next) {
         if ((t != p)
+            && (p->has_name)
+            && (t->has_name)
+            && (p->opponent == NULL)
             && (t->opponent == NULL)
-            && (t->lastbattled != p)
-            && (p->lastbattled != t)) {
+            && ((t->lastbattled != p) || (p->lastbattled != t))) {
 
             p->opponent = t;
             t->opponent = p;
@@ -220,6 +222,11 @@ void status_message(struct client *a, struct client *b) {
             b->hp, b->powermoves);
     write(b->fd, message, strlen(message));
 
+    sprintf(message, "%s has %d hitpoints\n", a->name, a->hp);
+    write(b->fd, message, strlen(message));
+    sprintf(message, "%s has %d hitpoints\n", b->name, b->hp);
+    write(a->fd, message, strlen(message));
+
     write(a->fd, "It's your turn!\n", 17);
     sprintf(message, "It's %s' turn!\n", a->name);
     write(b->fd, message, strlen(message));
@@ -231,37 +238,77 @@ void status_message(struct client *a, struct client *b) {
 }
 
 
-void lost_battle(struct client *a, struct client *b) {
+void lost_battle(struct client *a, struct client *b, struct client *top) {
+printf("lost_battle\n");
     char message[25];
     a->lastbattled = b;
     b->lastbattled = a;
     a->opponent = NULL;
     b->opponent = NULL;
-    write(a->fd, "You won!", 10);
+    write(a->fd, "You won!\n", 10);
+    write(a->fd, "Waiting for opponent...\n", 24);
+
     sprintf(message, "You were no match for %s!\n", a->name);
     write(b->fd, message, strlen(message));
+    write(b->fd, "Waiting for opponent...\n", 24);
+    
+    struct client *p;
+    for (p = top; p; p = p->next) {
+        if (a == top) {
+            if (p == a) {
+                top = p->next;
+            }
+        } else {
+            if (p->next == a) {
+                p->next = p->next->next;
+            }
+        }
+        if (p->next == NULL) {
+            p->next = a;
+            a->next = NULL;
+            break;
+        }
+    }
+
+    for (p = top; p; p = p->next) {
+        if (b == top) {
+            if (p == b) {
+                top = p->next;
+            }
+        } else {
+            if (p->next == b) {
+                p->next = p->next->next;
+            }
+        }
+        if (p->next == NULL) {
+            p->next = b;
+            b->next = NULL;
+            break;
+        }
+    }
 }
 
 
-void attack(struct client *a, struct client *b) {
+void attack(struct client *a, struct client *b, struct client *top) {
 printf("someone attacked someone\n");
     char message[25];
     int dmg = rand() % (6 - 2) + 2;
     b->hp -= dmg;
     a->turn = 0;
     b->turn = 1;
-    sprintf(message, "You hit %s for %d damage!\n", b->name, dmg);
+    sprintf(message, "\nYou hit %s for %d damage!\n", b->name, dmg);
     write(a->fd, message, strlen(message));
     sprintf(message, "%s hit you for %d damage!\n", a->name, dmg);
     write(b->fd, message, strlen(message));
     if (b->hp <= 0) {
-        lost_battle(a, b);
-    }    
-    status_message(b, a);
+        lost_battle(a, b, top);
+    } else {
+        status_message(b, a);
+    }
 }
 
 
-void powermove(struct client *a, struct client *b) {
+void powermove(struct client *a, struct client *b, struct client *top) {
 printf("whoa someone used a powermove\n");
     char message[25];
     if (a->powermoves > 0) {
@@ -272,15 +319,16 @@ printf("whoa someone used a powermove\n");
             a->powermoves -= 1;
             a->turn = 0;
             b->turn = 1;
-            sprintf(message, "You hit %s for %d damage!\n", b->name, dmg);
+            sprintf(message, "\nYou hit %s for %d damage!\n", b->name, dmg);
             write(a->fd, message, strlen(message));
             sprintf(message, "%s powermoves you for %d damage!\n", a->name, dmg);
             write(b->fd, message, strlen(message));
 
             if (b->hp <= 0) {
-                lost_battle(a, b);
+                lost_battle(a, b, top);
+            } else {
+                status_message(b, a);
             }
-            status_message(b, a);
 
         } else {
             a->powermoves -= 1;
@@ -291,9 +339,10 @@ printf("whoa someone used a powermove\n");
             b->turn = 1;
 
             if (b->hp <= 0) {
-                lost_battle(a, b);
+                lost_battle(a, b, top);
+            } else {
+                status_message(b, a);
             }
-            status_message(b, a);
         }
     }
 }
@@ -371,10 +420,7 @@ printf("oops, hes been removed\n");
     for (p = &top; *p && (*p)->fd != fd; p = &(*p)->next);
 
     if (*p) {
-        char outbuf[MAXNAME + 30];
-        sprintf(outbuf, "%s has left the arena!", (*p)->name);
         struct client *t = (*p)->next;
-        broadcast(top, fd, outbuf, strlen(outbuf));
         free(*p);
         *p = t;
 
