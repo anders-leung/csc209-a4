@@ -30,4 +30,6 @@ void attack(struct client *a, struct client *b, struct client *top);
 
 void powermove(struct client *a, struct client *b, struct client *top);
 
+void speak(struct client *a, struct client *b);
+
 #endif

@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -15,7 +16,6 @@
 
 #define MAXNAME 25
 
-#include "battleserver.h"
 
 struct client {
     int has_name;
@@ -114,7 +114,7 @@ printf("handleclient: struct client *p->name = %s\n", p->name);
         name(p, top);
         return 0;
     }
-
+    
     int len = read(p->fd, buf, sizeof(buf) - 1);
 
     if (len > 0) {
@@ -128,7 +128,10 @@ printf("client %s has opponent %s\n", p->name, p->opponent->name);
                 } else if (buf[0] == 'p') {
                     powermove(p, p->opponent, top);
                     return 0;
-                }
+                } else if (buf[0] == 's') {
+		  speak(p, p->opponent);
+		  return 0;
+		}
             }
         }
 
@@ -288,6 +291,38 @@ printf("lost_battle\n");
     }
 }
 
+void speak(struct client *a, struct client *b) {
+    int nbytes;
+    int inbuf = 0;
+    int end;
+    char buf[516];
+    char *after = buf;
+    
+    write(a->fd, "\nSpeak: ", 8);
+  
+    while ((nbytes = read(a->fd, after, sizeof(after) - 1)) > 0) {
+        inbuf += nbytes;
+        if ((end = find_newline(buf, inbuf)) >= 0) {
+            if (end >= 516) {
+                write(a->fd, "message was too long\n", 18);
+            }
+            buf[end] = '\0';
+            break;
+        }
+        after = &(*(buf + inbuf));
+    }
+    
+    
+    write(a->fd, "You said: \n", 10 );
+    write(a->fd, buf, strlen(buf));
+    write(a->fd, " \n", 2);
+   
+    write(b->fd, "New message: \n", 13);
+    write(b->fd, buf, strlen(buf));
+    write(b->fd, " \n", 2);
+    
+}
+
 
 void attack(struct client *a, struct client *b, struct client *top) {
 printf("someone attacked someone\n");
@@ -347,6 +382,7 @@ printf("whoa someone used a powermove\n");
     }
 }
 
+
 int bindandlisten(void) {
     struct sockaddr_in r;
     int listenfd;
@@ -396,6 +432,7 @@ printf("adding this god damn client\n");
     p->next = NULL;
     struct client *t;
     if (top == NULL) {
+            
         top = p;
     } else {
         for (t = top; t; t = t->next) {
@@ -408,6 +445,7 @@ printf("adding this god damn client\n");
         } else {
             perror("addclient");
         }
+            
     }
     return top;
 }
