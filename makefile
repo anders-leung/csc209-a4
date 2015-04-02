@@ -1,5 +1,5 @@
 CC = gcc
-PORT=56091
+PORT=56092
 CFLAGS = -DPORT=\$(PORT) -g -Wall
 
 all: battleserver
