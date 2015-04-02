@@ -4,7 +4,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/time.h>
+#include <time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "battleserver.h"
@@ -18,17 +18,20 @@
 #include "battleserver.h"
 
 struct client {
+    int has_name;
     char name[MAXNAME];
     int fd;
     struct in_addr ipaddr;
     struct client *next;
     struct client *lastbattled;
-    int inmatch;
+    struct client * opponent;
+    int turn;
     int hp;
     int powermoves;
 };
 
 int main(void) {
+    srand(time(NULL));
     int clientfd, maxfd, nready;
     struct client *p;
     struct client *head = NULL;
@@ -98,14 +101,117 @@ int main(void) {
 
 
 int handleclient(struct client *p, struct client *top) {
-	printf("handleclient\n");
+    char buf[256];
+    char outbuf[512];
+    char message[25];
+    int len = read(p->fd, buf, sizeof(buf) - 1);
+
+    if (len > 0) {
+        buf[len] = '\0';
+        if (!p->has_name) {
+            strncpy(p->name, buf, strlen(buf));
+            sprintf(message, "Welcome %s! Awaiting opponent...\n", p->name);
+            write(p->fd, message, strlen(message));
+            sprintf(message, "*** %s enters the arena **\n", p->name);
+            broadcast(top, p->fd, message);
+            return 0;
+
+        } else if (p->opponent == NULL) {
+            match(p, top);
+            return 0;
+
+        } else if (p->opponent) {
+            if (p->turn) {
+                if (buf[0] == 'a') {
+                    attack(p, p->opponent);
+                    return 0;
+
+                } else if (buf[0] == 'p') {
+                    powermove(p, p->opponent);
+                    return 0;
+                }
+            }
+        }
+
+    } else if (len == 0) {
+        printf("Disconnect from %s\n", inet_ntoa(p->ipaddr));
+        sprintf(outbuf, "%s left the arena\n", p->name);
+        broadcast(top, p->fd, outbuf);
+        return -1;
+
+    } else {
+        perror("read");
+        return -1;
+    }
+}
+
+
+void match(struct client *p, struct client *top) {
+    char message[25];
     struct client *t;
     for (t = top; t; t = t->next) {
-        if ((!t->inmatch) && (t->lastbattled != p) && (p != t)) {
-            return match(p,t);
+        if ((t != p)
+            && (t->opponent == NULL)
+            && (t->lastbattled != p)
+            && (p->lastbattled != t)) {
+            p->opponent = t;
+            t->opponent = p;
+            p->hp = rand() % (30 - 20) + 20;
+            p->powermoves = rand() % (3 - 1) + 1;
+            t->hp = rand() % (30 - 20) + 20;
+            t->powermoves = rand() % (3 - 1) + 1;
+            int first = rand() % 2;
+            if (first) {
+                p->turn = 1;
+                t->turn = 0;
+            } else {
+                p->turn = 0;
+                t->turn = 1;
+            }
+            sprintf(message, "You engage %s!\n", t->name);
+            write(p->fd, message, strlen(message));
+            sprintf(message, "You engage %s!\n", p->name);
+            write(t->fd, message, strlen(message));
         }
     }
-    return 0;
+}
+ 
+
+void attack(struct client *a, struct client *b) {
+    char message[25];
+    int dmg = rand() % (6 - 2) + 2;
+    b->hp -= dmg;
+    a->turn = 0;
+    b->turn = 1;
+    sprintf(message, "You hit %s for %d damage!\n", b->name, dmg);
+    write(a->fd, message, strlen(message));
+    sprintf(message, "%s hit you for %d damage!\n", a->name, dmg);
+    write(b->fd, message, strlen(message));
+}
+
+
+void powermove(struct client *a, struct client *b) {
+    char message[25];
+    if (a->powermoves > 0) {
+        int hit = rand() % 2;
+        if (hit) {
+            int dmg = (rand() % (6 - 2) + 2) * 3;
+            b->hp -= dmg;
+            a->powermoves -= 1;
+            a->turn = 0;
+            b->turn = 1;
+            sprintf(message, "You hit %s for %d damage!\n", b->name, dmg);
+            write(a->fd, message, strlen(message));
+            sprintf(message, "%s powermoves you for %d damage!\n", a->name, dmg);
+            write(b->fd, message, strlen(message));
+        } else {
+            write(a->fd, "You missed!\n", 12);
+            sprintf(message, "%s missed you!\n", a->name);
+            write(b->fd, message, strlen(message));
+            a->turn = 0;
+            b->turn = 1;
+        }
+    }
 }
 
 int bindandlisten(void) {
@@ -146,17 +252,8 @@ static struct client *addclient(struct client *top, int fd, struct in_addr addr)
         perror("malloc");
         exit(1);
     }
-    
-    write(fd, "What is your name?", 19);
-    readmessage(p->name, fd, MAXNAME);
-    
-    char message[512];
-    sprintf(message, "Welcome, %s! Awaiting opponent...\n", p->name);
-    write(fd, message, strlen(message));
-    
-    char outbuf[MAXNAME + 30];
-    sprintf(outbuf, "%s has entered the arena!", p->name);
-    broadcast(top, fd, outbuf, MAXNAME + 30);
+
+    write(fd, "What is your name? ", 20);
     
     p->fd = fd;
     p->ipaddr = addr;
@@ -173,11 +270,9 @@ static struct client *addclient(struct client *top, int fd, struct in_addr addr)
         if (t->next == NULL) {
             t->next = p;
         } else {
-            printf("Could not add %s\n", p->name);
-            perror("name");
+            perror("addclient");
         }
     }
-
     return top;
 }
 
@@ -191,7 +286,7 @@ static struct client *removeclient(struct client *top, int fd) {
         char outbuf[MAXNAME + 30];
         sprintf(outbuf, "%s has left the arena!", (*p)->name);
         struct client *t = (*p)->next;
-        broadcast(top, fd, outbuf, MAXNAME + 30);
+        broadcast(top, fd, outbuf);
         free(*p);
         *p = t;
 
@@ -203,11 +298,11 @@ static struct client *removeclient(struct client *top, int fd) {
 }
 
 
-static void broadcast(struct client *top, int fd, char *s, int size) {
+static void broadcast(struct client *top, int fd, char *s) {
     struct client *p;
     for (p = top; p; p = p->next) {
         if (p->fd != fd) {
-            if (write(p->fd, s, size) == -1) {
+            if (write(p->fd, s, strlen(s) + 1) == -1) {
                 perror("write");
                 exit(1);
             }
@@ -215,115 +310,4 @@ static void broadcast(struct client *top, int fd, char *s, int size) {
     }
 }
 
-
-int match(struct client *a, struct client *b) {
-    srand((unsigned)time(NULL));
-    a->inmatch = 1;
-    b->inmatch = 1;
-    a->lastbattled = b;
-    b->lastbattled = a;
-    a->hp = rand() % (30 - 20) + 20;
-    b->hp = rand() % (30 - 20) + 20;
-    a->powermoves = rand() % (3 - 1) + 1;
-    b->powermoves = rand() % (3 - 1) + 1;
-    
-    int first = rand() % (2 - 1) + 1;
-    char buf[100];
-    sprintf(buf, "You have been matched with %s\n", b->name);
-    write(a->fd, buf, strlen(buf) + 1);
-    sprintf(buf, "You have been matched with %s\n", a->name);
-    write(b->fd, buf, strlen(buf) + 1);
-    
-    if (first == 1) {
-        
-        while ((a->hp > 0) || (b->hp > 0)) {
-	  if (battle(a, b) == 1){
-	    battle(b,a);
-	  }
-        }
-    } else {
-        
-        while ((a->hp > 0) || (b->hp > 0)) {
-	  if (battle(a, b) == 1){
-	    battle(b,a); 
-	  }
-        }
-    }
-    return 0;
-}
-
-int readmessage(char *dest, int source, int size) {
-    int nbytes;
-    int end;
-    int inbuf = 0;
-    char buf[216];
-    char *after = buf;
-    while ((nbytes = read(source, after, size - 1)) > 0) {
-        inbuf += nbytes;
-        if ((end = find_network_newline(buf, inbuf)) >= 0) {
-            buf[end] = '\0';
-            strcpy(dest, buf);
-            return 0;
-        }
-        after = &(*(buf + inbuf));
-    }
-    return -1;
-}
-
-int find_network_newline(char *buf, int inbuf) {
-    int i;
-    for (i = 0; i < inbuf; i++) {
-        if (buf[i] == '\n') {
-            return i;
-        }
-    }
-    return -1;
-}
-    
-int battle(struct client *a, struct client *b) {
-  
-  
-    char buf[100];
-    
-    sprintf(buf, "It's your turn!\nYou have %d hitpoints and %d powermoves\n", a->hp, a->powermoves);
-    write(a->fd, buf, strlen(buf) + 1);
-    sprintf(buf, "It's %s turn!\nYou have %d hitpoints and %d powermoves\n", a->name, b->hp, b->powermoves);
-    write(b->fd, buf, strlen(buf) + 1);
-	
-    sprintf(buf, "You can press:\n(a)ttack\n(p)owermove\n(s)peak\n");
-    write(a->fd, buf, strlen(buf) + 1);
-    sprintf(buf, "You can press:\n(a)ttack\n(p)owermove\n(s)peak\n");
-    write(b->fd, buf, strlen(buf) + 1);
-    
-    int nbytes;
-    while ((nbytes = read(a->fd, buf, 1) > 0)) {
-        if (buf[0] == 'a') {
-            b->hp -= rand() % (6 - 2) + 2;
-	    return 1;
-        }
-        else if (buf[0] == 'p') {
-	  if(a->powermoves > 0){
-            int attack = rand() % (6 - 2) + 2;
-            attack = 3 * attack;
-            if ((rand() % 1) == 0) {
-                b->hp -= attack;
-		a->powermoves -= 1;
-		return 1;
-            }
-	  }
-        }
-        else if (buf[0] == 's'){
-            sprintf(buf, "Speak: ");
-            char outbuf[100];
-            write(a->fd, buf, strlen(buf) + 1);
-            readmessage(outbuf, a->fd, strlen(outbuf) + 1);
-            write(b->fd, outbuf, strlen(outbuf) + 1);
-	    return 0;
-        }
-        
-    }
-    return -1;
-}
-
-
-    
+   

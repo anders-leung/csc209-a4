@@ -13,17 +13,15 @@ static struct client *addclient(struct client *top, int fd, struct in_addr addr)
 static struct client *removeclient(struct client *top, int fd);
 
 /* Broadcast a message to all the clients except for the client with fd */
-static void broadcast(struct client *top, int fd, char *s, int size);
+static void broadcast(struct client *top, int fd, char *s);
 
 /* Match client with another client that meets the requirements */
 int handleclient(struct client *p, struct client *top);
 
-int match(struct client *a, struct client *b);
+void match(struct client *p, struct client *top);
 
-int readmessage(char * dest, int source, int size);
+void attack(struct client *a, struct client *b);
 
-int find_network_newline(char *buf, int inbuf);
-
-int battle(struct client *a, struct client *b);
+void powermove(struct client *a, struct client *b);
 
 #endif
