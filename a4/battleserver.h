@@ -13,10 +13,16 @@ static struct client *addclient(struct client *top, int fd, struct in_addr addr)
 static struct client *removeclient(struct client *top, int fd);
 
 /* Broadcast a message to all the clients except for the client with fd */
-static void broadcast(struct client *top, int fd, char *s);
+static void broadcast(struct client *top, int fd, char *s, int size);
 
 /* Match client with another client that meets the requirements */
 int handleclient(struct client *p, struct client *top);
+
+void status_message(struct client *a, struct client *b);
+
+int name(struct client *p, struct client *top);
+
+int find_newline(char *buf, int inbuf);
 
 void match(struct client *p, struct client *top);
 
