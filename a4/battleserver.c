@@ -199,6 +199,7 @@ printf("trying to match people here\n");
                 p->turn = 1;
                 t->turn = 0;
                 status_message(p, t);
+
             } else {
                 p->turn = 0;
                 t->turn = 1;
@@ -229,9 +230,18 @@ void status_message(struct client *a, struct client *b) {
 
 }
 
-/*
-int lost_battle(struct client *a, struct client *b) {
-    
+
+void lost_battle(struct client *a, struct client *b) {
+    char message[25];
+    a->lastbattled = b;
+    b->lastbattled = a;
+    a->opponent = NULL;
+    b->opponent = NULL;
+    write(a->fd, "You won!", 10);
+    sprintf(message, "You were no match for %s!\n", a->name);
+    write(b->fd, message, strlen(message));
+}
+
 
 void attack(struct client *a, struct client *b) {
 printf("someone attacked someone\n");
@@ -245,7 +255,8 @@ printf("someone attacked someone\n");
     sprintf(message, "%s hit you for %d damage!\n", a->name, dmg);
     write(b->fd, message, strlen(message));
     if (b->hp <= 0) {
-/*        
+        lost_battle(a, b);
+    }    
     status_message(b, a);
 }
 
@@ -265,7 +276,12 @@ printf("whoa someone used a powermove\n");
             write(a->fd, message, strlen(message));
             sprintf(message, "%s powermoves you for %d damage!\n", a->name, dmg);
             write(b->fd, message, strlen(message));
+
+            if (b->hp <= 0) {
+                lost_battle(a, b);
+            }
             status_message(b, a);
+
         } else {
             a->powermoves -= 1;
             write(a->fd, "You missed!\n", 12);
@@ -273,6 +289,10 @@ printf("whoa someone used a powermove\n");
             write(b->fd, message, strlen(message));
             a->turn = 0;
             b->turn = 1;
+
+            if (b->hp <= 0) {
+                lost_battle(a, b);
+            }
             status_message(b, a);
         }
     }
