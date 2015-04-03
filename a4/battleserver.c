@@ -217,10 +217,10 @@ printf("client p: %s, client t: %s\n", p->name, t->name);
 
 void status_message(struct client *a, struct client *b) {
     char message[25];
-    sprintf(message, "You have %d hitpoints and %d powermoves\n",
+    sprintf(message, "\nYou have %d hitpoints and %d powermoves\n",
             a->hp, a->powermoves);
     write(a->fd, message, strlen(message));
-    sprintf(message, "You have %d hitpoints and %d powermoves\n",
+    sprintf(message, "\nYou have %d hitpoints and %d powermoves\n",
             b->hp, b->powermoves);
     write(b->fd, message, strlen(message));
 
@@ -229,14 +229,36 @@ void status_message(struct client *a, struct client *b) {
     sprintf(message, "%s has %d hitpoints\n", b->name, b->hp);
     write(a->fd, message, strlen(message));
 
-    write(a->fd, "It's your turn!\n", 17);
-    sprintf(message, "It's %s' turn!\n", a->name);
+    write(a->fd, "\nIt's your turn!\n", 17);
+    sprintf(message, "\nIt's %s' turn!\n", a->name);
     write(b->fd, message, strlen(message));
 
-    write(a->fd, "(a)ttack\n(p)owermove\n(s)peak\n", 30);
+    write(a->fd, "\n(a)ttack\n(p)owermove\n(s)peak\n", 30);
     sprintf(message, "Waiting for %s to end turn\n", a->name);
     write(b->fd, message, strlen(message));
 
+}
+
+
+void move_to_bottom(struct client *p, struct client *top) {
+    struct client *t;
+    if (p == top) {
+        top = p->next;
+    } else {
+        for (t = top; t; t = t->next) {
+            if (t->next == p) {
+                t->next = t->next->next;
+                break;
+            }
+        }
+    }
+
+    for (t = top; t; t = t->next) {
+        if (t->next == NULL) {
+            t->next = p;
+            p->next = NULL;
+        }
+    }
 }
 
 
@@ -254,41 +276,10 @@ printf("lost_battle\n");
     write(b->fd, message, strlen(message));
     write(b->fd, "Waiting for opponent...\n", 24);
     
-    struct client *p;
-    for (p = top; p; p = p->next) {
-        if (a == top) {
-            if (p == a) {
-                top = p->next;
-            }
-        } else {
-            if (p->next == a) {
-                p->next = p->next->next;
-            }
-        }
-        if (p->next == NULL) {
-            p->next = a;
-            a->next = NULL;
-            break;
-        }
-    }
-
-    for (p = top; p; p = p->next) {
-        if (b == top) {
-            if (p == b) {
-                top = p->next;
-            }
-        } else {
-            if (p->next == b) {
-                p->next = p->next->next;
-            }
-        }
-        if (p->next == NULL) {
-            p->next = b;
-            b->next = NULL;
-            break;
-        }
-    }
+    move_to_bottom(a, top);
+    move_to_bottom(b, top);
 }
+
 
 void speak(struct client *a, struct client *b) {
     int end;
@@ -300,12 +291,12 @@ void speak(struct client *a, struct client *b) {
         a->message[end] = '\0';
         write(a->fd, "You said: ", 10 );
         write(a->fd, a->message, strlen(a->message));
-        write(a->fd, " \n", 2);
+        write(a->fd, " \n\n", 2);
    
         sprintf(message, "%s said: ", a->name);
         write(b->fd, message, strlen(message));
         write(b->fd, a->message, strlen(a->message));
-        write(b->fd, " \n", 2);
+        write(b->fd, " \n\n", 2);
 
         a->speaking = 0;
         memset(a->message, 0, sizeof(a->message));
@@ -448,6 +439,13 @@ printf("oops, hes been removed\n");
     for (p = &top; *p && (*p)->fd != fd; p = &(*p)->next);
 
     if (*p) {
+        memset((*p)->name, 0, sizeof((*p)->name));
+        memset((*p)->message, 0, sizeof((*p)->message));
+        (*p)->next = NULL;
+        (*p)->lastbattled = NULL;
+        (*p)->opponent->opponent = NULL;
+        (*p)->opponent = NULL;
+        write((*p)->opponent->fd, "\nYou won!\n", 10);
         struct client *t = (*p)->next;
         free(*p);
         *p = t;
