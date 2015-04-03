@@ -19,6 +19,8 @@
 
 struct client {
     int has_name;
+    int speaking;
+    char message[512];
     char name[MAXNAME];
     int fd;
     struct in_addr ipaddr;
@@ -106,20 +108,24 @@ int main(void) {
 
 
 int handleclient(struct client *p, struct client *top) {
-printf("handleclient: struct client *p->name = %s\n", p->name);
     char buf[256];
     char outbuf[512];
-
-    if (!p->has_name) {
-        name(p, top);
-        return 0;
-    }
-    
+ 
     int len = read(p->fd, buf, sizeof(buf) - 1);
 
     if (len > 0) {
-        if (p->opponent != NULL) {
-printf("client %s has opponent %s\n", p->name, p->opponent->name);
+        if (!p->has_name) {
+            strncpy(&(*(p->name + strlen(p->name))), buf, 1);
+            name(p, top);
+            return 0;
+
+        } else if (p->speaking) {
+            strncpy(&(*(p->message + strlen(p->message))), buf, 1);
+            speak(p, p->opponent);
+            return 0;
+
+        } else if (p->opponent != NULL) {
+
             if (p->turn) {
                 if (buf[0] == 'a') {
                     attack(p, p->opponent, top);
@@ -129,8 +135,9 @@ printf("client %s has opponent %s\n", p->name, p->opponent->name);
                     powermove(p, p->opponent, top);
                     return 0;
                 } else if (buf[0] == 's') {
-		  speak(p, p->opponent);
-		  return 0;
+                    write(p->fd, "\nSpeak: ", 8);
+		    p->speaking = 1;
+		    return 0;
 		}
             }
         }
@@ -145,32 +152,24 @@ printf("client %s has opponent %s\n", p->name, p->opponent->name);
         perror("read");
         return -1;
     }
+    return 0;
 }
 
 
 int name(struct client *p, struct client *top) {
-    int nbytes;
-    int inbuf = 0;
     int end;
-    char buf[MAXNAME];
-    char message[MAXNAME + 25];
-    char *after = buf;
-    while ((nbytes = read(p->fd, after, sizeof(after) - 1)) > 0) {
-        inbuf += nbytes;
-        if ((end = find_newline(buf, inbuf)) >= 0) {
-            if (end >= MAXNAME) {
-                write(p->fd, "Name was too long\n", 18);
-            }
-            buf[end] = '\0';      
-            strncpy(p->name, buf, strlen(buf));
-            sprintf(message, "Welcome %s! Awaiting opponent...\n", p->name);
-            write(p->fd, message, strlen(message));
-            sprintf(message, "*** %s enters the arena ***\n", p->name);
-            broadcast(top, p->fd, message, strlen(message));
-            p->has_name = 1;
-            return 0;
+    if ((end = find_newline(p->name, MAXNAME)) >= 0) {
+        if (end >= MAXNAME) {
+            write(p->fd, "Name was too long\n", 18);
         }
-        after = &(*(buf + inbuf));
+        char message[25];
+        p->name[end] = '\0';      
+        sprintf(message, "Welcome %s! Awaiting opponent...\n", p->name);
+        write(p->fd, message, strlen(message));
+        sprintf(message, "*** %s enters the arena ***\n", p->name);
+        broadcast(top, p->fd, message, strlen(message));
+        p->has_name = 1;
+        return 0;
     }
     return -1;
 }
@@ -186,7 +185,7 @@ printf("trying to match people here\n");
             && (p->opponent == NULL)
             && (t->opponent == NULL)
             && ((t->lastbattled != p) || (p->lastbattled != t))) {
-
+printf("client p: %s, client t: %s\n", p->name, t->name);
             p->opponent = t;
             t->opponent = p;
             p->hp = rand() % (30 - 20) + 20;
@@ -292,35 +291,26 @@ printf("lost_battle\n");
 }
 
 void speak(struct client *a, struct client *b) {
-    int nbytes;
-    int inbuf = 0;
     int end;
-    char buf[516];
-    char *after = buf;
-    
-    write(a->fd, "\nSpeak: ", 8);
-  
-    while ((nbytes = read(a->fd, after, sizeof(after) - 1)) > 0) {
-        inbuf += nbytes;
-        if ((end = find_newline(buf, inbuf)) >= 0) {
-            if (end >= 516) {
-                write(a->fd, "message was too long\n", 18);
-            }
-            buf[end] = '\0';
-            break;
+    if ((end = find_newline(a->message, sizeof(a->message))) >= 0) {
+        if (end >= 512) {
+            write(a->fd, "message was too long\n", 18);
         }
-        after = &(*(buf + inbuf));
-    }
-    
-    
-    write(a->fd, "You said: \n", 10 );
-    write(a->fd, buf, strlen(buf));
-    write(a->fd, " \n", 2);
+        char message[MAXNAME + 7];
+        a->message[end] = '\0';
+        write(a->fd, "You said: ", 10 );
+        write(a->fd, a->message, strlen(a->message));
+        write(a->fd, " \n", 2);
    
-    write(b->fd, "New message: \n", 13);
-    write(b->fd, buf, strlen(buf));
-    write(b->fd, " \n", 2);
-    
+        sprintf(message, "%s said: ", a->name);
+        write(b->fd, message, strlen(message));
+        write(b->fd, a->message, strlen(a->message));
+        write(b->fd, " \n", 2);
+
+        a->speaking = 0;
+        memset(a->message, 0, sizeof(a->message));
+    }
+   
 }
 
 
