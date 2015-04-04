@@ -25,6 +25,7 @@ struct client {
     int fd;
     struct in_addr ipaddr;
     struct client *next;
+    struct client *previous;
     struct client *lastbattled;
     struct client *opponent;
     int turn;
@@ -55,13 +56,29 @@ int main(void) {
         tv.tv_sec = 1;
         tv.tv_usec = 0;
 
+        struct client *k;
+        for (k = head; k; k = k->next) {
+            if (k->previous == NULL) {
+                head = k;
+            }
+        }
+
+        for (k = head; k; k = k->previous) {
+            if (k->previous == NULL) {
+                head = k;
+            }
+        }
+
+        if (head != NULL) {
+            struct client *k;
+            struct client *t = head;
+            for (k = head; k; k = k->next) {
+                match(k, t);
+            }
+        }
+ 
         nready = select(maxfd + 1, &rset, NULL, NULL, &tv);
         if (nready == 0) {
-            if (head != NULL) {
-                struct client *p = head;
-                struct client *t = head;
-                match(p, t); 
-            }
             printf("No response from clients in %ld seconds\n", tv.tv_sec);
             continue;
         }
@@ -103,6 +120,7 @@ int main(void) {
             }
         }
     }
+
     return 0;
 }
 
@@ -134,6 +152,7 @@ int handleclient(struct client *p, struct client *top) {
                 } else if (buf[0] == 'p') {
                     powermove(p, p->opponent, top);
                     return 0;
+
                 } else if (buf[0] == 's') {
                     write(p->fd, "\nSpeak: ", 8);
 		    p->speaking = 1;
@@ -152,6 +171,7 @@ int handleclient(struct client *p, struct client *top) {
         perror("read");
         return -1;
     }
+
     return 0;
 }
 
@@ -162,6 +182,7 @@ int name(struct client *p, struct client *top) {
         if (end >= MAXNAME) {
             write(p->fd, "Name was too long\n", 18);
         }
+
         char message[25];
         p->name[end] = '\0';      
         sprintf(message, "Welcome %s! Awaiting opponent...\n", p->name);
@@ -171,11 +192,11 @@ int name(struct client *p, struct client *top) {
         p->has_name = 1;
         return 0;
     }
+
     return -1;
 }
  
 void match(struct client *p, struct client *top) {
-printf("trying to match people here\n");
     char message[25];
     struct client *t;
     for (t = top; t; t = t->next) {
@@ -185,7 +206,7 @@ printf("trying to match people here\n");
             && (p->opponent == NULL)
             && (t->opponent == NULL)
             && ((t->lastbattled != p) || (p->lastbattled != t))) {
-printf("client p: %s, client t: %s\n", p->name, t->name);
+
             p->opponent = t;
             t->opponent = p;
             p->hp = rand() % (30 - 20) + 20;
@@ -240,30 +261,43 @@ void status_message(struct client *a, struct client *b) {
 }
 
 
-void move_to_bottom(struct client *p, struct client *top) {
-    struct client *t;
+struct client *move_to_bottom(struct client *p, struct client *top) {
     if (p == top) {
-        top = p->next;
+        struct client *newtop = top->next;
+        struct client *cur = newtop;
+
+        while (cur->next) {
+            cur = cur->next;
+        }
+        top->next = NULL;
+        top->previous = cur;
+        cur->next = top;
+
+        top = newtop;
+        top->previous = NULL;
+
+    } else if (p->next == NULL) {
+        return top;
+
     } else {
-        for (t = top; t; t = t->next) {
+        struct client *t = top;
+        while (t->next) {
             if (t->next == p) {
                 t->next = t->next->next;
-                break;
+                t->next->previous = t;
             }
+            t = t->next;
         }
+        t->next = p;
+        p->previous = t;
+        p->next = NULL;
     }
 
-    for (t = top; t; t = t->next) {
-        if (t->next == NULL) {
-            t->next = p;
-            p->next = NULL;
-        }
-    }
+    return top;
 }
 
 
 void lost_battle(struct client *a, struct client *b, struct client *top) {
-printf("lost_battle\n");
     char message[25];
     a->lastbattled = b;
     b->lastbattled = a;
@@ -276,7 +310,7 @@ printf("lost_battle\n");
     write(b->fd, message, strlen(message));
     write(b->fd, "Waiting for opponent...\n", 24);
     
-    move_to_bottom(a, top);
+    top = move_to_bottom(a, top);
     move_to_bottom(b, top);
 }
 
@@ -306,7 +340,6 @@ void speak(struct client *a, struct client *b) {
 
 
 void attack(struct client *a, struct client *b, struct client *top) {
-printf("someone attacked someone\n");
     char message[25];
     int dmg = rand() % (6 - 2) + 2;
     b->hp -= dmg;
@@ -325,7 +358,6 @@ printf("someone attacked someone\n");
 
 
 void powermove(struct client *a, struct client *b, struct client *top) {
-printf("whoa someone used a powermove\n");
     char message[25];
     if (a->powermoves > 0) {
         int hit = rand() % 2;
@@ -397,7 +429,6 @@ int bindandlisten(void) {
 }
 
 static struct client *addclient(struct client *top, int fd, struct in_addr addr) {
-printf("adding this god damn client\n");
     struct client *p = malloc(sizeof(struct client));
     if (!p) {
         perror("malloc");
@@ -411,42 +442,47 @@ printf("adding this god damn client\n");
     p->has_name = 0;
     p->opponent = NULL;
     p->next = NULL;
+
     struct client *t;
-    if (top == NULL) {
-            
+    if (top == NULL) { 
+        p->previous = NULL;
         top = p;
+
     } else {
-        for (t = top; t; t = t->next) {
-            if (t->next == NULL) {
-                break;
-            }
-        }
-        if (t->next == NULL) {
-            t->next = p;
-        } else {
-            perror("addclient");
-        }
-            
+        for (t = top; t->next; t = t->next);
+        p->previous = t;
+        t->next = p;
     }
+
+    if ((p->next == NULL) && (p->previous == NULL)) {
+        perror("addclient");
+    }
+
     return top;
 }
 
 
 static struct client *removeclient(struct client *top, int fd) {
-printf("oops, hes been removed\n");
     struct client **p;
 
     for (p = &top; *p && (*p)->fd != fd; p = &(*p)->next);
 
     if (*p) {
-        memset((*p)->name, 0, sizeof((*p)->name));
-        memset((*p)->message, 0, sizeof((*p)->message));
-        (*p)->next = NULL;
-        (*p)->lastbattled = NULL;
-        (*p)->opponent->opponent = NULL;
-        (*p)->opponent = NULL;
-        write((*p)->opponent->fd, "\nYou won!\n", 10);
+        if ((*p)->has_name) {
+            memset((*p)->name, 0, sizeof((*p)->name));
+            memset((*p)->message, 0, sizeof((*p)->message));
+            (*p)->next = NULL;
+            (*p)->lastbattled = NULL;
+        }
+
+        if ((*p)->opponent != NULL) {
+            write((*p)->opponent->fd, "\nYou won!\n", 10);
+            (*p)->opponent->opponent = NULL;
+            (*p)->opponent = NULL;
+        }
+
         struct client *t = (*p)->next;
+        t->previous = t->previous->previous;
         free(*p);
         *p = t;
 
@@ -459,7 +495,6 @@ printf("oops, hes been removed\n");
 
 
 static void broadcast(struct client *top, int fd, char *s, int size) {
-printf("broadcasting to you live...\n");
     struct client *p;
     for (p = top; p; p = p->next) {
         if (p->fd != fd) {
@@ -473,7 +508,6 @@ printf("broadcasting to you live...\n");
 
 
 int find_newline(char *buf, int inbuf) {
-printf("so umm... wheres the newline guys?\n");
     int i;
     for (i = 0; i < inbuf; i++) {
         if (buf[i] == '\n') {
