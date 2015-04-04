@@ -11,7 +11,7 @@
 #include "battleserver.h"
 
 #ifndef PORT
-    #define PORT 56092
+    #define PORT 56099
 #endif
 
 #define MAXNAME 25
@@ -124,7 +124,8 @@ int main(void) {
     return 0;
 }
 
-
+/*handleclient handles when there's a signal coming in from a client and determines if the client is entering a name, 
+ speaking to its opponent, attacking, or the client has disconnected*/
 int handleclient(struct client *p, struct client *top) {
     char buf[256];
     char outbuf[512];
@@ -175,7 +176,7 @@ int handleclient(struct client *p, struct client *top) {
     return 0;
 }
 
-
+/*the name function gets the name from the client and broadcast to everyone*/
 int name(struct client *p, struct client *top) {
     int end;
     if ((end = find_newline(p->name, MAXNAME)) >= 0) {
@@ -195,7 +196,8 @@ int name(struct client *p, struct client *top) {
 
     return -1;
 }
- 
+
+/*the match function matches a client to a suitable opponent */
 void match(struct client *p, struct client *top) {
     char message[25];
     struct client *t;
@@ -235,7 +237,8 @@ void match(struct client *p, struct client *top) {
     }
 }
 
-
+/*display the updated message of how many hitpoints, powermoves, 
+ as well as who's turn is it */
 void status_message(struct client *a, struct client *b) {
     char message[25];
     sprintf(message, "\nYou have %d hitpoints and %d powermoves\n",
@@ -260,7 +263,7 @@ void status_message(struct client *a, struct client *b) {
 
 }
 
-
+/*moves the client to the bottom of the list after a battle*/
 struct client *move_to_bottom(struct client *p, struct client *top) {
     if (p == top) {
         struct client *newtop = top->next;
@@ -296,7 +299,7 @@ struct client *move_to_bottom(struct client *p, struct client *top) {
     return top;
 }
 
-
+/*display appropriate message to the winner and the loser*/
 void lost_battle(struct client *a, struct client *b, struct client *top) {
     char message[25];
     a->lastbattled = b;
@@ -314,7 +317,7 @@ void lost_battle(struct client *a, struct client *b, struct client *top) {
     move_to_bottom(b, top);
 }
 
-
+/* the function speak writes client a's message to client b*/
 void speak(struct client *a, struct client *b) {
     int end;
     if ((end = find_newline(a->message, sizeof(a->message))) >= 0) {
@@ -337,8 +340,7 @@ void speak(struct client *a, struct client *b) {
     }
    
 }
-
-
+/*client a attacks client b*/
 void attack(struct client *a, struct client *b, struct client *top) {
     char message[25];
     int dmg = rand() % (6 - 2) + 2;
@@ -356,7 +358,7 @@ void attack(struct client *a, struct client *b, struct client *top) {
     }
 }
 
-
+/* client a uses powermove on client b*/
 void powermove(struct client *a, struct client *b, struct client *top) {
     char message[25];
     if (a->powermoves > 0) {
@@ -515,4 +517,5 @@ int find_newline(char *buf, int inbuf) {
         }
     }
     return -1;
+}
 
