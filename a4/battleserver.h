@@ -32,12 +32,10 @@ void powermove(struct client *a, struct client *b, struct client *top);
 
 void speak(struct client *a, struct client *b);
 
-void lost_battle(struct client *a, struct client *b);
-
 struct client *move_to_bottom(struct client *p, struct client *top);
 
 int name(struct client *p, struct client *top);
 
-void lost_battle(struct client *a, struct client *b, client *top);
+void lost_battle(struct client *a, struct client *b, struct client *top);
 
 #endif
