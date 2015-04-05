@@ -472,9 +472,12 @@ static struct client *removeclient(struct client *top, int fd) {
     if (*p) {
         if ((*p)->has_name) {
             memset((*p)->name, 0, sizeof((*p)->name));
-            memset((*p)->message, 0, sizeof((*p)->message));
             (*p)->next = NULL;
             (*p)->lastbattled = NULL;
+        }
+
+        if ((*p)->speaking) {
+            memset((*p)->message, 0, sizeof((*p)->message));
         }
 
         if ((*p)->opponent != NULL) {
@@ -484,7 +487,9 @@ static struct client *removeclient(struct client *top, int fd) {
         }
 
         struct client *t = (*p)->next;
-        t->previous = t->previous->previous;
+        if ((*p)->previous != NULL) {
+            (*p)->previous = (*p)->previous->previous;
+        }
         free(*p);
         *p = t;
 
